@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Input</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;background:transparent}
+body{font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;color:#111827;-webkit-font-smoothing:antialiased}
+h3{margin:0;font-size:14px;line-height:20px;font-weight:600;color:#111827}
+p{margin:0}
+.stack{display:flex;flex-direction:column;gap:20px}
+.field{display:flex;flex-direction:column;gap:6px}
+.label{font-size:14px;font-weight:500;color:#374151}
+.hint{font-size:12px;line-height:16px;color:#6b7280}
+.muted{color:#6b7280}
+select,input,textarea{font:inherit;font-size:14px;color:#111827;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px}
+select{padding-right:32px}
+textarea{resize:none;width:100%}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12px;line-height:18px}
+select:focus,input:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid #3b82f6;outline-offset:1px}
+select:disabled{background:#f9fafb;color:#6b7280}
+button{font:inherit;font-size:14px;font-weight:500;border-radius:6px;padding:8px 16px;cursor:pointer;border:1px solid transparent;transition:background-color .15s}
+button:disabled{cursor:not-allowed;opacity:.6}
+.primary{background:#2563eb;color:#fff}
+.primary:hover:not(:disabled){background:#1d4ed8}
+.secondary{background:#fff;color:#374151;border-color:#d1d5db}
+.secondary:hover:not(:disabled){background:#f9fafb}
+.link{background:none;border:0;padding:0;color:#1d4ed8;font-size:14px;font-weight:500}
+.link:hover{color:#1e40af;text-decoration:underline}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.error{font-size:14px;color:#b91c1c}
+.ok{font-size:12px;color:#047857}
+.spin{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #bfdbfe;border-top-color:#1d4ed8;animation:spin 1s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation:none;border-top-color:#bfdbfe;border-right-color:#1d4ed8}}
+.divider{height:1px;background:#e5e7eb;border:0;margin:0}
+
+.facts{display:grid;grid-template-columns:max-content 1fr;column-gap:24px;row-gap:4px;margin:8px 0 0;font-size:14px}
+.facts dt{color:#6b7280}
+.facts dd{margin:0;color:#111827}
+.lang{display:flex;align-items:center;gap:12px}
+.lang select{width:240px}
+</style>
+</head>
+<body>
+<div class="stack">
+  <div class="field">
+    <label class="label" for="lang">Language</label>
+    <div class="lang">
+      <select id="lang" disabled>
+        <option value="auto">Auto (English or Chinese)</option>
+        <option value="en">English</option>
+        <option value="zh">Chinese</option>
+      </select>
+      <span id="saved" class="hint" aria-live="polite"></span>
+    </div>
+    <p class="hint">Auto recognizes English and Chinese in each recording. Choose one language if Auto often guesses wrong.</p>
+  </div>
+  <div>
+    <h3>Installed</h3>
+    <dl class="facts" id="facts"><dt>Voice runtime</dt><dd>…</dd></dl>
+  </div>
+</div>
+<script>
+// Voice Input's page (AutoByteus extension contract §5): it talks to Voice Input's own actions only through the
+// message bridge; AutoByteus sends the app's language once when the page loads.
+
+let seq = 0; const pending = {};
+function call(name, input) {
+  return new Promise((resolve, reject) => {
+    const id = String(++seq); pending[id] = { resolve, reject };
+    parent.postMessage({ id, call: name, input: input ?? null }, '*');
+  });
+}
+addEventListener('message', (event) => {
+  if (event.source !== parent) return;
+  const m = event.data || {}; const p = pending[m.id]; if (!p) return; delete pending[m.id];
+  m.ok ? p.resolve(m.output) : p.reject(new Error(m.error || 'The extension did not answer.'));
+});
+// The page tells its frame how tall it is (contract §5): no id, no reply.
+const tellHeight = () => parent.postMessage({ resize: { height: Math.ceil(document.documentElement.getBoundingClientRect().height) } }, '*');
+new ResizeObserver(tellHeight).observe(document.documentElement);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// The app's language, sent once by AutoByteus when the page loads (contract §5): the page shows its own texts in it.
+let LOCALE = 'en'; let ZH = {}; let ZH_PATTERNS = [];
+const tr = (text) => {
+  const key = text.trim(); if (!key) return null;
+  if (ZH[key]) return text.replace(key, ZH[key]);
+  for (const [re, to] of ZH_PATTERNS) if (re.test(key)) return text.replace(key, key.replace(re, to));
+  return null;
+};
+function localize(el) {
+  if (LOCALE !== 'zh-CN') return;
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+  for (const n of nodes) { const v = tr(n.nodeValue); if (v !== null) n.nodeValue = v; }
+  el.querySelectorAll('[placeholder],[aria-label],[alt],[title]').forEach((e) => { for (const a of ['aria-label', 'alt', 'title']) { const v = e.getAttribute(a) && tr(e.getAttribute(a)); if (v) e.setAttribute(a, v); } });
+}
+new MutationObserver(() => localize(document.body)).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+addEventListener('message', (event) => {
+  if (event.source !== parent || !event.data || typeof event.data.locale !== 'string') return;
+  LOCALE = event.data.locale; document.documentElement.lang = LOCALE; localize(document.body);
+});
+
+ZH = { 'Language': '语言', 'Auto (English or Chinese)': '自动（英文或中文）', 'English': '英文', 'Chinese': '中文',
+  'Auto recognizes English and Chinese in each recording. Choose one language if Auto often guesses wrong.': '自动会在每段录音中识别英文和中文。如果自动经常识别错误，请选择一种语言。',
+  'Installed': '已安装', 'Voice runtime': '语音运行时', 'Speech model': '语音模型', 'Folder': '文件夹',
+  'Saving…': '正在保存…', 'Saved': '已保存', 'Copy': '复制', 'Copied': '已复制', 'Press ⌘C to copy': '按 ⌘C 复制', 'Copy the folder path': '复制文件夹路径' };
+const lang = document.getElementById('lang'); const saved = document.getElementById('saved'); const facts = document.getElementById('facts');
+call('getSettings').then((s) => {
+  lang.value = s.language; lang.disabled = false;
+  // The folder with Copy (no Open folder: the contract has no folder action; DEC-015).
+  facts.innerHTML = [['Voice runtime', esc(s.runtimeVersion)], ['Speech model', esc(s.model)],
+    ['Folder', '<span class="mono" id="folder">' + esc(s.folder) + '</span> <button class="link" id="copyfolder" aria-label="Copy the folder path">Copy</button>']]
+    .map(([k, v]) => '<dt>' + esc(k) + '</dt><dd>' + v + '</dd>').join('');
+  document.getElementById('copyfolder').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    try { await navigator.clipboard.writeText(s.folder); b.textContent = 'Copied'; }
+    catch { getSelection().selectAllChildren(document.getElementById('folder')); b.textContent = 'Press ⌘C to copy'; }
+    setTimeout(() => { b.textContent = 'Copy'; }, 2000);
+  });
+}).catch((e) => { saved.className = 'error'; saved.textContent = e.message; });
+lang.addEventListener('change', async () => {
+  lang.disabled = true; saved.className = 'hint'; saved.textContent = 'Saving…';
+  try { await call('setLanguage', { language: lang.value }); saved.className = 'ok'; saved.textContent = 'Saved'; }
+  catch (e) { saved.className = 'error'; saved.textContent = e.message; }
+  finally { lang.disabled = false; setTimeout(() => { if (saved.textContent === 'Saved') saved.textContent = ''; }, 2000); }
+});
+</script>
+</body>
+</html>

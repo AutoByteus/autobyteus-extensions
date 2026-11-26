@@ -1,0 +1,36 @@
+# Releases one extension's package when its tag is pushed: <id>-v<version> (for example voice-input-v1.0.0).
+# Publishes <id>-<version>.tar.gz and its .sha256 as the assets of that tag's release, never marked Latest.
+# It never touches the `catalog` release: a new version reaches nodes only when catalog.json is changed and the
+# catalog workflow signs and publishes it.
+name: Release an extension
+on:
+  push:
+    tags: ['*-v[0-9]*.[0-9]*.[0-9]*']
+permissions: { contents: write }
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Test
+        run: npm test
+      - name: Pack
+        id: pack
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          id="${tag%-v*}"
+          version="${tag##*-v}"
+          node scripts/pack.mjs "$id" --expect-version "$version"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Publish the package
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -euo pipefail
+          file="dist/${{ steps.pack.outputs.id }}-${{ steps.pack.outputs.version }}.tar.gz"
+          gh release create "$GITHUB_REF_NAME" "$file" "$file.sha256" --latest=false \
+            --title "${{ steps.pack.outputs.id }} ${{ steps.pack.outputs.version }}" \
+            --notes "Package of ${{ steps.pack.outputs.id }} ${{ steps.pack.outputs.version }}. SHA-256: $(cut -d' ' -f1 "$file.sha256"). It reaches nodes once catalog.json lists it and the catalog is released."

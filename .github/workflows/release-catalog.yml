@@ -1,0 +1,33 @@
+# Publishes the signed catalog: replaces the two assets of the fixed release `catalog` (never marked Latest) with
+# extensions-catalog.json (the exact bytes of catalog.json) and extensions-catalog.json.sig. Every released AutoByteus
+# fetches https://github.com/AutoByteus/autobyteus-extensions/releases/download/catalog/extensions-catalog.json.
+# The signing key exists only as this repository's secret EXTENSIONS_CATALOG_SIGNING_KEY.
+name: Release the catalog
+on:
+  workflow_dispatch:
+permissions: { contents: write }
+concurrency: { group: extensions-catalog, cancel-in-progress: false }
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Test
+        run: npm test
+      - name: Check every listed package
+        run: node scripts/check-catalog.mjs catalog.json
+      - name: Sign
+        env: { EXTENSIONS_CATALOG_SIGNING_KEY: "${{ secrets.EXTENSIONS_CATALOG_SIGNING_KEY }}" }
+        run: node scripts/sign-catalog.mjs --catalog catalog.json --public-key catalog-public-key.pem --out dist
+      - name: Publish
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -euo pipefail
+          if ! gh release view catalog >/dev/null 2>&1; then
+            gh release create catalog --latest=false --title "Extension catalog" \
+              --notes "The signed list of AutoByteus extensions. Its assets are replaced on each catalog release."
+          fi
+          gh release upload catalog dist/extensions-catalog.json dist/extensions-catalog.json.sig --clobber
+          gh release edit catalog --latest=false
