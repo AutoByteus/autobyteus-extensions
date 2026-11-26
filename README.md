@@ -46,10 +46,14 @@ Nothing is released without the founder's word.
 
 ### The catalog signing key (once)
 
-The founder creates an Ed25519 key pair himself (`openssl genpkey -algorithm ed25519 -out key.pem`), stores the private
-key only as the repository secret `EXTENSIONS_CATALOG_SIGNING_KEY`, and commits its public key
-(`openssl pkey -in key.pem -pubout`) as `catalog-public-key.pem`; AutoByteus builds the same public key in
-(`EXTENSIONS_CATALOG_PUBLIC_KEY_PEM`). The private key is never put in a file in the repository or a message.
+Created on 2026-11-26 (autobyteus-657) on the founder's Mac by the setup script he approved, run on his word: the
+script wrote the Ed25519 private key straight into a protected local file and into the repository secret
+`EXTENSIONS_CATALOG_SIGNING_KEY`, and never printed it; no agent opens, reads, copies or commits it. The private key
+exists only as that secret and in the founder's own backup. Its public half is `catalog-public-key.pem`
+(fingerprint `SHA256:75d4d2f80ed35374e7956d736aed66111e3eac76b911eb2367428a27dc64ad4c`); AutoByteus builds the same
+key in (`EXTENSIONS_CATALOG_PUBLIC_KEY_PEM`). The workflow *Check the signing key* proves the secret still matches
+`catalog-public-key.pem` (it signs and verifies, publishing nothing). Changing the key is a coordinated change with a
+new app release, never a fix for a failed run.
 
 ### Developing against your own catalog
 
