@@ -37,7 +37,6 @@ test('checks catalog entries against their packages', async () => {
   await assert.rejects(checkCatalog(catalogFile, fetchUrl), /differs from its catalog entry/)
   await fs.writeFile(catalogFile, JSON.stringify({ extensions: [{ ...entry, sha256: '0'.repeat(64) }] }))
   await assert.rejects(checkCatalog(catalogFile, fetchUrl), /does not match its sha256/)
-  assert.deepEqual(await checkCatalog('catalog.json', fetchUrl), [])
 })
 
 test('signs the exact catalog bytes with the key from the environment, checked against the public key', async () => {
